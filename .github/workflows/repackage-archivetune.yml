@@ -622,12 +622,25 @@ jobs:
 
           background="$(cat launcher_icon/background.txt)"
 
+          # IMPORTANT:
+          # Apktool's decoded public.xml retains public declarations for
+          # mipmap/ic_launcher_foreground and mipmap/ic_launcher_monochrome.
+          # Do not delete those resource names and recreate them only as
+          # drawable resources; aapt2 will then fail with:
+          #   no definition for declared symbol ...:mipmap/ic_launcher_foreground
+          #
+          # Replace only the actual launcher resources and recreate the
+          # foreground/monochrome resources under the original mipmap type.
           find decoded/res -type f \
             \( \
-              -name 'ic_launcher*.png' -o \
-              -name 'ic_launcher*.webp' -o \
-              -name 'ic_launcher*.jpg' -o \
-              -name 'ic_launcher*.xml' \
+              -name 'ic_launcher.png' -o \
+              -name 'ic_launcher.webp' -o \
+              -name 'ic_launcher.jpg' -o \
+              -name 'ic_launcher_round.png' -o \
+              -name 'ic_launcher_round.webp' -o \
+              -name 'ic_launcher_round.jpg' -o \
+              -name 'ic_launcher_foreground.*' -o \
+              -name 'ic_launcher_monochrome.*' \
             \) \
             -delete
 
@@ -642,6 +655,7 @@ jobs:
             decoded/res/drawable-nodpi \
             decoded/res/values
 
+          # Legacy launcher icons.
           for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             cp "launcher_icon/legacy_${density}.png" \
               "decoded/res/mipmap-${density}/ic_launcher.png"
@@ -649,11 +663,47 @@ jobs:
               "decoded/res/mipmap-${density}/ic_launcher_round.png"
           done
 
-          cp launcher_icon/foreground.png \
-            decoded/res/drawable-nodpi/ic_launcher_foreground.png
+          # Keep the resource TYPE as mipmap because upstream public.xml
+          # declares these names as mipmap resources. The adaptive icon XML
+          # below therefore references @mipmap/ic_launcher_foreground and
+          # @mipmap/ic_launcher_monochrome.
+          declare -A foreground_sizes=(
+            [mdpi]=108
+            [hdpi]=162
+            [xhdpi]=216
+            [xxhdpi]=324
+            [xxxhdpi]=432
+          )
 
-          cp launcher_icon/monochrome.png \
-            decoded/res/drawable-nodpi/ic_launcher_monochrome.png
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            size="${foreground_sizes[$density]}"
+
+            python3 - "$size" "launcher_icon/foreground.png" "decoded/res/mipmap-${density}/ic_launcher_foreground.png" <<'PY'
+          from PIL import Image
+          import sys
+
+          size = int(sys.argv[1])
+          src = Image.open(sys.argv[2]).convert("RGBA")
+          src.resize((size, size), Image.Resampling.LANCZOS).save(
+              sys.argv[3],
+              format="PNG",
+              optimize=True,
+          )
+          PY
+
+            python3 - "$size" "launcher_icon/monochrome.png" "decoded/res/mipmap-${density}/ic_launcher_monochrome.png" <<'PY'
+          from PIL import Image
+          import sys
+
+          size = int(sys.argv[1])
+          src = Image.open(sys.argv[2]).convert("RGBA")
+          src.resize((size, size), Image.Resampling.LANCZOS).save(
+              sys.argv[3],
+              format="PNG",
+              optimize=True,
+          )
+          PY
+          done
 
           cat > decoded/res/values/at_fork_launcher_colors.xml <<XML
           <?xml version="1.0" encoding="utf-8"?>
@@ -666,7 +716,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
               <background android:drawable="@color/at_fork_launcher_background" />
-              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
           </adaptive-icon>
           XML
 
@@ -678,8 +728,8 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
               <background android:drawable="@color/at_fork_launcher_background" />
-              <foreground android:drawable="@drawable/ic_launcher_foreground" />
-              <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+              <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
           </adaptive-icon>
           XML
 
